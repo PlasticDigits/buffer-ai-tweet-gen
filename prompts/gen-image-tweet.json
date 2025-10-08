@@ -1,0 +1,7 @@
+{
+  "type": "image",
+  "prompt": "Attached image is CL8Y logo, to be included in scene.\n${var:imageprompt}",
+  "image_input": ["./LOGO_CL8Y.png"],
+  "aspect_ratio": "16:9",
+  "output_format": "jpg"
+}
