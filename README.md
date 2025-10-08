@@ -82,3 +82,7 @@ pytest
 ```
 
 This ensures your environment can render prompts and handle simulated model responses before invoking Replicate.
+
+## License
+
+Licensed under the AGPL-3.0. See [`LICENSE`](./LICENSE) for details.
