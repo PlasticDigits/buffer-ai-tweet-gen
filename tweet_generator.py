@@ -77,6 +77,14 @@ def _parse_args() -> argparse.Namespace:
         default="tweet_output",
         help="Filename prefix for generated JSON summaries.",
     )
+    parser.add_argument(
+        "--madlib-topic",
+        default=None,
+        help=(
+            "Optional override for the ${madlib:topic} placeholder in prompts. "
+            "When provided, the topic madlib will use this exact value instead of sampling."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -102,11 +110,16 @@ def main() -> int:
     madlib_log: dict[str, list[str]] = {}
 
     try:
+        madlib_overrides = {}
+        if args.madlib_topic:
+            madlib_overrides["topic"] = args.madlib_topic
+
         tweet_payload = render_prompt(
             TEXT_PROMPT_PATH,
             madlib_dir=MADLIB_DIR,
             rng=rng,
             selection_log=madlib_log,
+            madlib_overrides=madlib_overrides,
         )
         tweet_text = _run_text_model(text_model, tweet_payload).strip()
         if not tweet_text:
@@ -118,6 +131,7 @@ def main() -> int:
             madlib_dir=MADLIB_DIR,
             rng=rng,
             selection_log=madlib_log,
+            madlib_overrides=madlib_overrides,
         )
         image_prompt = _run_text_model(text_model, image_prompt_payload).strip()
         if not image_prompt:
