@@ -30,6 +30,7 @@ class _ResolutionContext:
     variables: Mapping[str, Any]
     rng: random.Random
     selections: MutableMapping[str, list[str]]
+    madlib_overrides: Mapping[str, str]
 
 
 def render_prompt(
@@ -42,6 +43,7 @@ def render_prompt(
     madlib_dir: str | Path | None = None,
     rng: random.Random | None = None,
     selection_log: MutableMapping[str, list[str]] | None = None,
+    madlib_overrides: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Render a prompt template applying madlib substitutions and overrides.
 
@@ -88,6 +90,7 @@ def render_prompt(
         variables=variables or {},
         rng=rng or random.Random(),
         selections=selection_log if selection_log is not None else {},
+        madlib_overrides=madlib_overrides or {},
     )
 
     return _resolve_structure(resolved, context)
@@ -158,12 +161,15 @@ def _select_madlib_value(context: _ResolutionContext, key: str) -> str:
     file_name = key if key.endswith(".json") else f"{key}.json"
     madlib_file = context.madlib_dir / file_name
     choices = _load_madlib_choices(madlib_file)
-    try:
-        selection = context.rng.choice(choices)
-    except IndexError as exc:  # pragma: no cover - defensive guard
-        raise PromptTemplateError(
-            f"Madlib file '{madlib_file}' does not contain any entries"
-        ) from exc
+    if key in context.madlib_overrides:
+        selection = context.madlib_overrides[key]
+    else:
+        try:
+            selection = context.rng.choice(choices)
+        except IndexError as exc:  # pragma: no cover - defensive guard
+            raise PromptTemplateError(
+                f"Madlib file '{madlib_file}' does not contain any entries"
+            ) from exc
 
     context.selections.setdefault(key, []).append(selection)
     return selection
