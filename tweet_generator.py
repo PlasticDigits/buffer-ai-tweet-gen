@@ -77,6 +77,12 @@ def _parse_args() -> argparse.Namespace:
         default="tweet_output",
         help="Filename prefix for generated JSON summaries.",
     )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="Number of tweets to generate (default: 1).",
+    )
     return parser.parse_args()
 
 
@@ -99,74 +105,88 @@ def main() -> int:
 
         rng = Random(args.seed)
 
-    madlib_log: dict[str, list[str]] = {}
+    successful_count = 0
+    failed_count = 0
 
-    try:
-        tweet_payload = render_prompt(
-            TEXT_PROMPT_PATH,
-            madlib_dir=MADLIB_DIR,
-            rng=rng,
-            selection_log=madlib_log,
+    for i in range(args.count):
+        print(f"\n--- Generating tweet {i+1}/{args.count} ---")
+        madlib_log: dict[str, list[str]] = {}
+
+        try:
+            tweet_payload = render_prompt(
+                TEXT_PROMPT_PATH,
+                madlib_dir=MADLIB_DIR,
+                rng=rng,
+                selection_log=madlib_log,
+            )
+            tweet_text = _run_text_model(text_model, tweet_payload).strip()
+            if not tweet_text:
+                raise RuntimeError("Text model returned empty tweet content.")
+
+            image_prompt_payload = render_prompt(
+                IMAGE_TEXT_PROMPT_PATH,
+                variables={"tweet": tweet_text},
+                madlib_dir=MADLIB_DIR,
+                rng=rng,
+                selection_log=madlib_log,
+            )
+            image_prompt = _run_text_model(text_model, image_prompt_payload).strip()
+            if not image_prompt:
+                raise RuntimeError("Image prompt generation returned empty prompt.")
+
+            image_generation_payload = render_prompt(
+                IMAGE_PROMPT_PATH,
+                variables={"imageprompt": image_prompt},
+                madlib_dir=MADLIB_DIR,
+                rng=rng,
+                selection_log=madlib_log,
+            )
+
+            image_path = _run_image_model(
+                image_model,
+                image_generation_payload,
+                output_dir,
+                prefix=args.image_prefix,
+            )
+
+        except PromptTemplateError as exc:
+            print(f"Prompt templating failed: {exc}", file=sys.stderr)
+            failed_count += 1
+            continue
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"Generation failed: {exc}", file=sys.stderr)
+            failed_count += 1
+            continue
+
+        summary = {
+            "tweet": tweet_text,
+            "image": image_path.name,
+            "image_prompt": image_prompt,
+            "madlib": madlib_log,
+        }
+        summary_path = _next_output_path(
+            output_dir, prefix=args.json_prefix, suffix=".json"
         )
-        tweet_text = _run_text_model(text_model, tweet_payload).strip()
-        if not tweet_text:
-            raise RuntimeError("Text model returned empty tweet content.")
-
-        image_prompt_payload = render_prompt(
-            IMAGE_TEXT_PROMPT_PATH,
-            variables={"tweet": tweet_text},
-            madlib_dir=MADLIB_DIR,
-            rng=rng,
-            selection_log=madlib_log,
-        )
-        image_prompt = _run_text_model(text_model, image_prompt_payload).strip()
-        if not image_prompt:
-            raise RuntimeError("Image prompt generation returned empty prompt.")
-
-        image_generation_payload = render_prompt(
-            IMAGE_PROMPT_PATH,
-            variables={"imageprompt": image_prompt},
-            madlib_dir=MADLIB_DIR,
-            rng=rng,
-            selection_log=madlib_log,
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-        image_path = _run_image_model(
-            image_model,
-            image_generation_payload,
-            output_dir,
-            prefix=args.image_prefix,
+        _append_tweet_index(
+            output_dir=output_dir,
+            tweet=tweet_text,
+            json_path=summary_path,
+            image_path=image_path,
         )
 
-    except PromptTemplateError as exc:
-        print(f"Prompt templating failed: {exc}", file=sys.stderr)
+        print(f"Tweet saved to {summary_path}")
+        print(f"Image saved to {image_path}")
+        successful_count += 1
+
+    print(f"\n=== Generation Complete ===")
+    print(f"Successfully generated: {successful_count}/{args.count}")
+    if failed_count > 0:
+        print(f"Failed: {failed_count}/{args.count}")
         return 1
-    except Exception as exc:  # pylint: disable=broad-except
-        print(f"Generation failed: {exc}", file=sys.stderr)
-        return 1
-
-    summary = {
-        "tweet": tweet_text,
-        "image": image_path.name,
-        "image_prompt": image_prompt,
-        "madlib": madlib_log,
-    }
-    summary_path = _next_output_path(
-        output_dir, prefix=args.json_prefix, suffix=".json"
-    )
-    summary_path.write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-
-    _append_tweet_index(
-        output_dir=output_dir,
-        tweet=tweet_text,
-        json_path=summary_path,
-        image_path=image_path,
-    )
-
-    print(f"Tweet saved to {summary_path}")
-    print(f"Image saved to {image_path}")
     return 0
 
 
